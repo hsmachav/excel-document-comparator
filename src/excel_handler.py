@@ -23,7 +23,8 @@ class ExcelHandler:
             df = pd.read_excel(file_path, sheet_name=0)
             
             # Strip whitespace from all string columns
-            df = df.applymap(lambda x: x.strip() if isinstance(x, str) else x)
+            # Use apply instead of applymap (applymap deprecated in pandas 2.1.0+)
+            df = df.apply(lambda col: col.map(lambda x: x.strip() if isinstance(x, str) else x) if col.dtype == 'object' else col)
             
             # Find columns by matching keywords (case-insensitive)
             column_mapping = {}
