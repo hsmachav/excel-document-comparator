@@ -11,6 +11,7 @@ class ExcelHandler:
     def read_excel(file_path: str) -> pd.DataFrame:
         """
         Read Excel file and return DataFrame.
+        Dynamically finds Document Name, Revision, and File name columns.
         
         Args:
             file_path: Path to Excel file
@@ -20,10 +21,43 @@ class ExcelHandler:
         """
         try:
             df = pd.read_excel(file_path, sheet_name=0)
-            # Rename columns to standard names
-            df.columns = ['Document Name', 'Revision', 'File name']
+            
             # Strip whitespace from all string columns
             df = df.applymap(lambda x: x.strip() if isinstance(x, str) else x)
+            
+            # Find columns by matching keywords (case-insensitive)
+            column_mapping = {}
+            df_columns_lower = [col.lower() for col in df.columns]
+            
+            # Find Document Name column
+            for idx, col in enumerate(df_columns_lower):
+                if 'document' in col and 'name' in col:
+                    column_mapping['Document Name'] = df.columns[idx]
+                    break
+            
+            # Find Revision column
+            for idx, col in enumerate(df_columns_lower):
+                if 'revision' in col:
+                    column_mapping['Revision'] = df.columns[idx]
+                    break
+            
+            # Find File name column
+            for idx, col in enumerate(df_columns_lower):
+                if 'file' in col and ('name' in col or 'filename' in col):
+                    column_mapping['File name'] = df.columns[idx]
+                    break
+            
+            # Validate that all required columns were found
+            if len(column_mapping) < 3:
+                raise Exception(
+                    f"Could not find all required columns. Found: {list(column_mapping.keys())}. "
+                    f"Available columns: {list(df.columns)}"
+                )
+            
+            # Select only the required columns
+            df = df[list(column_mapping.values())]
+            df.columns = list(column_mapping.keys())
+            
             return df
         except Exception as e:
             raise Exception(f"Error reading Excel file: {str(e)}")
