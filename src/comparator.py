@@ -29,6 +29,7 @@ class DocumentComparator:
     ) -> Tuple[List[Dict], Dict]:
         """
         Compare two DataFrames and identify changes.
+        Handles multiple rows per document name.
         
         Args:
             df_old: DataFrame from first report (earlier date)
@@ -46,62 +47,81 @@ class DocumentComparator:
             'both_changed': 0
         }
 
-        # Create dictionaries for quick lookup
+        # Create dictionaries grouping by document name
+        # Each document name maps to a list of (revision, files) tuples
         old_dict = {}
         for idx, row in df_old.iterrows():
             doc_name = row['Document Name']
-            old_dict[doc_name] = {
-                'revision': row['Revision'],
-                'files': DocumentComparator.parse_files(row['File name'])
-            }
+            revision = row['Revision']
+            files = DocumentComparator.parse_files(row['File name'])
+            
+            if doc_name not in old_dict:
+                old_dict[doc_name] = []
+            old_dict[doc_name].append({
+                'revision': revision,
+                'files': files
+            })
 
         new_dict = {}
         for idx, row in df_new.iterrows():
             doc_name = row['Document Name']
-            new_dict[doc_name] = {
-                'revision': row['Revision'],
-                'files': DocumentComparator.parse_files(row['File name'])
-            }
+            revision = row['Revision']
+            files = DocumentComparator.parse_files(row['File name'])
+            
+            if doc_name not in new_dict:
+                new_dict[doc_name] = []
+            new_dict[doc_name].append({
+                'revision': revision,
+                'files': files
+            })
+
+        # Sort by revision to handle zigzag patterns
+        for doc_name in old_dict:
+            old_dict[doc_name].sort(key=lambda x: (str(x['revision']), str(x['files'])))
+        
+        for doc_name in new_dict:
+            new_dict[doc_name].sort(key=lambda x: (str(x['revision']), str(x['files'])))
 
         # Compare all documents from new report
-        for doc_name, new_data in new_dict.items():
+        for doc_name, new_data_list in new_dict.items():
             if doc_name in old_dict:
-                old_data = old_dict[doc_name]
+                old_data_list = old_dict[doc_name]
                 
-                # Check for changes
-                revision_changed = old_data['revision'] != new_data['revision']
-                files_changed = old_data['files'] != new_data['files']
-
-                if revision_changed or files_changed:
-                    change = DocumentComparator._build_change_record(
+                # Convert to sets for comparison
+                old_set = set((d['revision'], frozenset(d['files'])) for d in old_data_list)
+                new_set = set((d['revision'], frozenset(d['files'])) for d in new_data_list)
+                
+                # Check if there are any differences
+                if old_set != new_set:
+                    change = DocumentComparator._build_change_record_multiple(
                         doc_name,
-                        old_data,
-                        new_data,
-                        revision_changed,
-                        files_changed
+                        old_data_list,
+                        new_data_list
                     )
                     changes.append(change)
                     summary['total_changed'] += 1
                     summary['total_changes'] += 1
-
-                    if revision_changed and files_changed:
-                        summary['both_changed'] += 1
-                    elif revision_changed:
+                    
+                    # Determine change type
+                    old_revisions = set(d['revision'] for d in old_data_list)
+                    new_revisions = set(d['revision'] for d in new_data_list)
+                    
+                    if old_revisions != new_revisions:
                         summary['revision_only'] += 1
                     else:
                         summary['files_only'] += 1
             else:
-                # New document added (files changed, revision is new)
-                change = DocumentComparator._build_new_document_record(doc_name, new_data)
+                # New document added
+                change = DocumentComparator._build_new_document_record_multiple(doc_name, new_data_list)
                 changes.append(change)
                 summary['total_changed'] += 1
                 summary['total_changes'] += 1
                 summary['files_only'] += 1
 
         # Check for removed documents
-        for doc_name, old_data in old_dict.items():
+        for doc_name, old_data_list in old_dict.items():
             if doc_name not in new_dict:
-                change = DocumentComparator._build_removed_document_record(doc_name, old_data)
+                change = DocumentComparator._build_removed_document_record_multiple(doc_name, old_data_list)
                 changes.append(change)
                 summary['total_changed'] += 1
                 summary['total_changes'] += 1
@@ -110,61 +130,73 @@ class DocumentComparator:
         return changes, summary
 
     @staticmethod
-    def _build_change_record(
+    def _build_change_record_multiple(
         doc_name: str,
-        old_data: Dict,
-        new_data: Dict,
-        revision_changed: bool,
-        files_changed: bool
+        old_data_list: List[Dict],
+        new_data_list: List[Dict]
     ) -> Dict:
         """
-        Build a change record for a modified document.
+        Build a change record for a modified document with multiple revisions.
         
         Args:
             doc_name: Document name
-            old_data: Old document data
-            new_data: New document data
-            revision_changed: Whether revision changed
-            files_changed: Whether files changed
+            old_data_list: List of old document data (multiple revisions)
+            new_data_list: List of new document data (multiple revisions)
             
         Returns:
             Change record dictionary
         """
-        old_files_str = ', '.join(sorted(old_data['files'])) if old_data['files'] else "(none)"
-        new_files_str = ', '.join(sorted(new_data['files'])) if new_data['files'] else "(none)"
-
+        # Get all revisions and files
+        old_revisions = sorted(set(d['revision'] for d in old_data_list))
+        new_revisions = sorted(set(d['revision'] for d in new_data_list))
+        
+        # Combine all files
+        old_all_files = set()
+        for d in old_data_list:
+            old_all_files.update(d['files'])
+        
+        new_all_files = set()
+        for d in new_data_list:
+            new_all_files.update(d['files'])
+        
+        old_files_str = ', '.join(sorted(old_all_files)) if old_all_files else "(none)"
+        new_files_str = ', '.join(sorted(new_all_files)) if new_all_files else "(none)"
+        
         # Calculate file changes
-        files_added = new_data['files'] - old_data['files']
-        files_removed = old_data['files'] - new_data['files']
-
+        files_added = new_all_files - old_all_files
+        files_removed = old_all_files - new_all_files
+        
         # Build remarks
         remarks_parts = []
         
-        if revision_changed:
-            remarks_parts.append(
-                f"Revision changed from {old_data['revision']} to {new_data['revision']}"
-            )
+        if old_revisions != new_revisions:
+            old_rev_str = ', '.join(str(r) for r in old_revisions)
+            new_rev_str = ', '.join(str(r) for r in new_revisions)
+            remarks_parts.append(f"Revisions changed from [{old_rev_str}] to [{new_rev_str}]")
         
         if files_added:
             remarks_parts.append(f"Files added: {', '.join(sorted(files_added))}")
         
         if files_removed:
             remarks_parts.append(f"Files removed: {', '.join(sorted(files_removed))}")
-
+        
         remarks = "; ".join(remarks_parts)
-
+        
         # Determine change type
+        revision_changed = old_revisions != new_revisions
+        files_changed = old_all_files != new_all_files
+        
         if revision_changed and files_changed:
             change_type = "BOTH_CHANGED"
         elif revision_changed:
             change_type = "REVISION_CHANGED"
         else:
             change_type = "FILES_CHANGED"
-
+        
         return {
             'document_name': doc_name,
-            'old_revision': old_data['revision'],
-            'new_revision': new_data['revision'],
+            'old_revision': ', '.join(str(r) for r in old_revisions),
+            'new_revision': ', '.join(str(r) for r in new_revisions),
             'old_files': old_files_str,
             'new_files': new_files_str,
             'change_type': change_type,
@@ -172,46 +204,58 @@ class DocumentComparator:
         }
 
     @staticmethod
-    def _build_new_document_record(doc_name: str, new_data: Dict) -> Dict:
+    def _build_new_document_record_multiple(doc_name: str, new_data_list: List[Dict]) -> Dict:
         """
-        Build a record for a newly added document.
+        Build a record for a newly added document with multiple revisions.
         
         Args:
             doc_name: Document name
-            new_data: New document data
+            new_data_list: List of new document data (multiple revisions)
             
         Returns:
             Change record dictionary
         """
-        new_files_str = ', '.join(sorted(new_data['files'])) if new_data['files'] else "(none)"
-
+        new_revisions = sorted(set(d['revision'] for d in new_data_list))
+        
+        new_all_files = set()
+        for d in new_data_list:
+            new_all_files.update(d['files'])
+        
+        new_files_str = ', '.join(sorted(new_all_files)) if new_all_files else "(none)"
+        
         return {
             'document_name': doc_name,
             'old_revision': "(new)",
-            'new_revision': new_data['revision'],
+            'new_revision': ', '.join(str(r) for r in new_revisions),
             'old_files': "(none)",
             'new_files': new_files_str,
             'change_type': "FILES_CHANGED",
-            'remarks': f"New document added with revision {new_data['revision']}"
+            'remarks': f"New document added with revisions [{', '.join(str(r) for r in new_revisions)}]"
         }
 
     @staticmethod
-    def _build_removed_document_record(doc_name: str, old_data: Dict) -> Dict:
+    def _build_removed_document_record_multiple(doc_name: str, old_data_list: List[Dict]) -> Dict:
         """
-        Build a record for a removed document.
+        Build a record for a removed document with multiple revisions.
         
         Args:
             doc_name: Document name
-            old_data: Old document data
+            old_data_list: List of old document data (multiple revisions)
             
         Returns:
             Change record dictionary
         """
-        old_files_str = ', '.join(sorted(old_data['files'])) if old_data['files'] else "(none)"
-
+        old_revisions = sorted(set(d['revision'] for d in old_data_list))
+        
+        old_all_files = set()
+        for d in old_data_list:
+            old_all_files.update(d['files'])
+        
+        old_files_str = ', '.join(sorted(old_all_files)) if old_all_files else "(none)"
+        
         return {
             'document_name': doc_name,
-            'old_revision': old_data['revision'],
+            'old_revision': ', '.join(str(r) for r in old_revisions),
             'new_revision': "(removed)",
             'old_files': old_files_str,
             'new_files': "(none)",
