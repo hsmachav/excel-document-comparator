@@ -45,7 +45,7 @@ class ExcelComparatorApp:
              sg.Button('Clear', size=(15, 1), pad=(0, (20, 0))),
              sg.Button('Exit', size=(15, 1), pad=(0, (20, 0)))],
             
-            [sg.Multiline(size=(80, 15), key='-OUTPUT-', disabled=True, pad=(0, (15, 10)))],
+            [sg.Multiline(size=(80, 15), key='-LOGS-', disabled=True, pad=(0, (15, 10)))],
         ]
         return layout
 
@@ -68,7 +68,7 @@ class ExcelComparatorApp:
                 self.window['-FILE1-'].update('')
                 self.window['-FILE2-'].update('')
                 self.window['-OUTPUT-'].update('')
-                self.window['-OUTPUT-'].update('')
+                self.window['-LOGS-'].update('')
 
         self.window.close()
 
@@ -133,6 +133,8 @@ class ExcelComparatorApp:
 
         except Exception as e:
             self._log(f'ERROR: {str(e)}')
+            import traceback
+            self._log(traceback.format_exc())
 
     def _log(self, message):
         """
@@ -141,9 +143,9 @@ class ExcelComparatorApp:
         Args:
             message: Message to log
         """
-        current_text = self.window['-OUTPUT-'].get()
-        self.window['-OUTPUT-'].update(current_text + message + '\n')
-        self.window['-OUTPUT-'].set_vscroll(True)  # Scroll to bottom
+        current_text = self.window['-LOGS-'].get()
+        self.window['-LOGS-'].update(current_text + message + '\n')
+        self.window.refresh()
 
 
 if __name__ == '__main__':
