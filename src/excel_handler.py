@@ -11,7 +11,7 @@ class ExcelHandler:
     def read_excel(file_path: str) -> pd.DataFrame:
         """
         Read Excel file and return DataFrame.
-        Dynamically finds Document Name, Revision, and File name columns.
+        Dynamically finds Name, Revision, and File name columns.
         
         Args:
             file_path: Path to Excel file
@@ -30,34 +30,49 @@ class ExcelHandler:
             column_mapping = {}
             df_columns_lower = [col.lower() for col in df.columns]
             
-            # Find Document Name column
+            # Find Document Name column - look for "Name" (not "File Name" or "Native files count")
             for idx, col in enumerate(df_columns_lower):
-                if 'document' in col and 'name' in col:
+                col_lower = col.strip()
+                # Match "Name" but exclude "File Name", "Native files count"
+                if col_lower == 'name':
                     column_mapping['Document Name'] = df.columns[idx]
                     break
             
             # Find Revision column
             for idx, col in enumerate(df_columns_lower):
-                if 'revision' in col:
+                col_lower = col.strip()
+                if col_lower == 'revision':
                     column_mapping['Revision'] = df.columns[idx]
                     break
             
-            # Find File name column
+            # Find File name column - case insensitive, look for "File name" or "File Name"
             for idx, col in enumerate(df_columns_lower):
-                if 'file' in col and ('name' in col or 'filename' in col):
+                col_lower = col.strip()
+                if col_lower == 'file name' or col_lower == 'filename':
                     column_mapping['File name'] = df.columns[idx]
                     break
             
             # Validate that all required columns were found
             if len(column_mapping) < 3:
+                missing = []
+                if 'Document Name' not in column_mapping:
+                    missing.append('Name')
+                if 'Revision' not in column_mapping:
+                    missing.append('Revision')
+                if 'File name' not in column_mapping:
+                    missing.append('File name or File Name')
+                
                 raise Exception(
-                    f"Could not find all required columns. Found: {list(column_mapping.keys())}. "
+                    f"Could not find required columns: {', '.join(missing)}. "
                     f"Available columns: {list(df.columns)}"
                 )
             
             # Select only the required columns
             df = df[list(column_mapping.values())]
             df.columns = list(column_mapping.keys())
+            
+            # Remove any rows with NaN in key columns
+            df = df.dropna(subset=['Document Name', 'Revision', 'File name'])
             
             return df
         except Exception as e:
