@@ -11,13 +11,13 @@ class ExcelHandler:
     def read_excel(file_path: str) -> pd.DataFrame:
         """
         Read Excel file and return DataFrame.
-        Dynamically finds Name, Revision, and File name columns.
+        Dynamically finds Name, Revision, File name, and Approval Code columns.
         
         Args:
             file_path: Path to Excel file
             
         Returns:
-            DataFrame with columns: Document Name, Revision, File name
+            DataFrame with columns: Document Name, Revision, File name, Approval Code
         """
         try:
             df = pd.read_excel(file_path, sheet_name=0)
@@ -52,27 +52,39 @@ class ExcelHandler:
                     column_mapping['File name'] = df.columns[idx]
                     break
             
-            # Validate that all required columns were found
-            if len(column_mapping) < 3:
-                missing = []
-                if 'Document Name' not in column_mapping:
-                    missing.append('Name')
-                if 'Revision' not in column_mapping:
-                    missing.append('Revision')
-                if 'File name' not in column_mapping:
-                    missing.append('File name or File Name')
-                
+            # Find Approval Code column
+            for idx, col in enumerate(df_columns_lower):
+                col_lower = col.strip()
+                if 'approval' in col_lower and 'code' in col_lower:
+                    column_mapping['Approval Code'] = df.columns[idx]
+                    break
+            
+            # Validate that required columns were found
+            required_cols = ['Document Name', 'Revision', 'File name']
+            missing = [col for col in required_cols if col not in column_mapping]
+            
+            if missing:
                 raise Exception(
                     f"Could not find required columns: {', '.join(missing)}. "
                     f"Available columns: {list(df.columns)}"
                 )
             
             # Select only the required columns
-            df = df[list(column_mapping.values())]
-            df.columns = list(column_mapping.keys())
+            selected_cols = [column_mapping[col] for col in required_cols]
+            if 'Approval Code' in column_mapping:
+                selected_cols.append(column_mapping['Approval Code'])
+            
+            df = df[selected_cols]
+            
+            # Rename columns
+            new_column_names = required_cols
+            if 'Approval Code' in column_mapping:
+                new_column_names.append('Approval Code')
+            
+            df.columns = new_column_names
             
             # Remove any rows with NaN in key columns
-            df = df.dropna(subset=['Document Name', 'Revision', 'File name'])
+            df = df.dropna(subset=required_cols)
             
             return df
         except Exception as e:
@@ -114,6 +126,8 @@ class ExcelHandler:
         # Define headers
         headers = [
             "Document Name",
+            "Old Approval Code",
+            "New Approval Code",
             "Old Revision",
             "New Revision",
             "Old Files",
@@ -133,15 +147,17 @@ class ExcelHandler:
         # Write data
         for row, change in enumerate(changes, 2):
             ws.cell(row=row, column=1).value = change['document_name']
-            ws.cell(row=row, column=2).value = change['old_revision']
-            ws.cell(row=row, column=3).value = change['new_revision']
-            ws.cell(row=row, column=4).value = change['old_files']
-            ws.cell(row=row, column=5).value = change['new_files']
-            ws.cell(row=row, column=6).value = change['change_type']
-            ws.cell(row=row, column=7).value = change['remarks']
+            ws.cell(row=row, column=2).value = change['old_approval_code']
+            ws.cell(row=row, column=3).value = change['new_approval_code']
+            ws.cell(row=row, column=4).value = change['old_revision']
+            ws.cell(row=row, column=5).value = change['new_revision']
+            ws.cell(row=row, column=6).value = change['old_files']
+            ws.cell(row=row, column=7).value = change['new_files']
+            ws.cell(row=row, column=8).value = change['change_type']
+            ws.cell(row=row, column=9).value = change['remarks']
 
             # Apply alignment and wrapping
-            for col in range(1, 8):
+            for col in range(1, 10):
                 cell = ws.cell(row=row, column=col)
                 cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
 
@@ -149,10 +165,12 @@ class ExcelHandler:
         ws.column_dimensions['A'].width = 25
         ws.column_dimensions['B'].width = 15
         ws.column_dimensions['C'].width = 15
-        ws.column_dimensions['D'].width = 30
-        ws.column_dimensions['E'].width = 30
-        ws.column_dimensions['F'].width = 20
-        ws.column_dimensions['G'].width = 40
+        ws.column_dimensions['D'].width = 15
+        ws.column_dimensions['E'].width = 15
+        ws.column_dimensions['F'].width = 30
+        ws.column_dimensions['G'].width = 30
+        ws.column_dimensions['H'].width = 20
+        ws.column_dimensions['I'].width = 40
 
     @staticmethod
     def _create_summary_sheet(wb: Workbook, summary: Dict) -> None:
