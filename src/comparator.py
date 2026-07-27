@@ -48,18 +48,20 @@ class DocumentComparator:
         }
 
         # Create dictionaries grouping by document name
-        # Each document name maps to a list of (revision, files) tuples
+        # Each document name maps to a list of (revision, files, approval_code) tuples
         old_dict = {}
         for idx, row in df_old.iterrows():
             doc_name = row['Document Name']
             revision = row['Revision']
             files = DocumentComparator.parse_files(row['File name'])
+            approval_code = row.get('Approval Code', '(none)') if 'Approval Code' in row else '(none)'
             
             if doc_name not in old_dict:
                 old_dict[doc_name] = []
             old_dict[doc_name].append({
                 'revision': revision,
-                'files': files
+                'files': files,
+                'approval_code': approval_code
             })
 
         new_dict = {}
@@ -67,12 +69,14 @@ class DocumentComparator:
             doc_name = row['Document Name']
             revision = row['Revision']
             files = DocumentComparator.parse_files(row['File name'])
+            approval_code = row.get('Approval Code', '(none)') if 'Approval Code' in row else '(none)'
             
             if doc_name not in new_dict:
                 new_dict[doc_name] = []
             new_dict[doc_name].append({
                 'revision': revision,
-                'files': files
+                'files': files,
+                'approval_code': approval_code
             })
 
         # Sort by revision to handle zigzag patterns
@@ -150,6 +154,13 @@ class DocumentComparator:
         old_revisions = sorted(set(d['revision'] for d in old_data_list))
         new_revisions = sorted(set(d['revision'] for d in new_data_list))
         
+        # Get approval codes
+        old_approval_codes = sorted(set(d['approval_code'] for d in old_data_list if d['approval_code'] != '(none)'))
+        new_approval_codes = sorted(set(d['approval_code'] for d in new_data_list if d['approval_code'] != '(none)'))
+        
+        old_approval_code_str = ', '.join(old_approval_codes) if old_approval_codes else "(none)"
+        new_approval_code_str = ', '.join(new_approval_codes) if new_approval_codes else "(none)"
+        
         # Combine all files
         old_all_files = set()
         for d in old_data_list:
@@ -195,6 +206,8 @@ class DocumentComparator:
         
         return {
             'document_name': doc_name,
+            'old_approval_code': old_approval_code_str,
+            'new_approval_code': new_approval_code_str,
             'old_revision': ', '.join(str(r) for r in old_revisions),
             'new_revision': ', '.join(str(r) for r in new_revisions),
             'old_files': old_files_str,
@@ -217,6 +230,10 @@ class DocumentComparator:
         """
         new_revisions = sorted(set(d['revision'] for d in new_data_list))
         
+        # Get approval codes
+        new_approval_codes = sorted(set(d['approval_code'] for d in new_data_list if d['approval_code'] != '(none)'))
+        new_approval_code_str = ', '.join(new_approval_codes) if new_approval_codes else "(none)"
+        
         new_all_files = set()
         for d in new_data_list:
             new_all_files.update(d['files'])
@@ -225,6 +242,8 @@ class DocumentComparator:
         
         return {
             'document_name': doc_name,
+            'old_approval_code': "(new)",
+            'new_approval_code': new_approval_code_str,
             'old_revision': "(new)",
             'new_revision': ', '.join(str(r) for r in new_revisions),
             'old_files': "(none)",
@@ -247,6 +266,10 @@ class DocumentComparator:
         """
         old_revisions = sorted(set(d['revision'] for d in old_data_list))
         
+        # Get approval codes
+        old_approval_codes = sorted(set(d['approval_code'] for d in old_data_list if d['approval_code'] != '(none)'))
+        old_approval_code_str = ', '.join(old_approval_codes) if old_approval_codes else "(none)"
+        
         old_all_files = set()
         for d in old_data_list:
             old_all_files.update(d['files'])
@@ -255,6 +278,8 @@ class DocumentComparator:
         
         return {
             'document_name': doc_name,
+            'old_approval_code': old_approval_code_str,
+            'new_approval_code': "(removed)",
             'old_revision': ', '.join(str(r) for r in old_revisions),
             'new_revision': "(removed)",
             'old_files': old_files_str,
